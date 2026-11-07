@@ -1,0 +1,22 @@
+[package]
+name = "kinsift-providers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+hunch = "2.0.4"
+kinsift-core = { version = "0.1.0", path = "../kinsift-core" }
+log = "0.4.35"
+regex = "1.13.1"
+serde_json = "1.0.154"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+dirs = "7.0.0"
+tempfile = "3.27.0"

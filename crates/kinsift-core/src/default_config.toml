@@ -1,0 +1,101 @@
+# kinsift built-in defaults.
+#
+# Your own ~/.config/kinsift/config.toml uses the same format. Views and
+# keep-rules with the same name replace these; new names are added.
+
+# Scan roots and how deletion works on them. Without an entry, a root gets
+# `delete = "auto"`: the OS trash if it lives on the same filesystem as your
+# home directory, otherwise kinsift's quarantine inside the root.
+#
+# [[roots]]
+# path = "/mnt/series"
+# delete = "quarantine"            # auto | trash | quarantine | permanent
+# quarantine = "/mnt/series/.kinsift-trash"
+
+[providers.priority]
+# Highest priority first. Providers not listed fall back to their built-in
+# priority (container readers beat values guessed from the file name).
+video = ["mkv", "mp4", "name"]
+
+[trash]
+remind_size = "50GiB"
+remind_age_days = 30
+
+[[views]]
+name = "folders"
+description = "Folder tree with sizes"
+group_by = ["fs.root", "fs.path"]
+
+[[views]]
+name = "series"
+description = "TV episodes by show, season and episode"
+group_by = ["name.title", "name.season", "name.episode"]
+filter = "name.type = episode and name.season is not null and name.episode is not null"
+keep_rule = "lower-resolution"
+
+[[views]]
+name = "movies"
+description = "Movies by title and year"
+group_by = ["name.title", "name.year"]
+filter = "name.type = movie"
+keep_rule = "lower-resolution"
+
+[[views]]
+name = "same-folder"
+description = "Several versions of the same item in one folder"
+group_by = ["fs.root", "fs.dir", "name.title", "name.year", "name.season", "name.episode"]
+filter = "name.title is not null"
+duplicates_only = true
+keep_rule = "best-video"
+
+[[views]]
+name = "mislabeled"
+description = "Files whose name and contents disagree (e.g. resolution)"
+group_by = ["meta.conflicts", "fs.root", "fs.dir"]
+filter = "meta.conflicts is not null"
+
+[[views]]
+name = "photos-by-date"
+description = "Photos by capture year and month"
+group_by = ["exif.taken_at:year", "exif.taken_at:month"]
+filter = "exif.taken_at is not null"
+
+[[views]]
+name = "photo-duplicates"
+description = "Photos with the same capture time, camera and dimensions"
+group_by = ["exif.taken_at", "exif.camera", "image.width", "image.height"]
+filter = "exif.taken_at is not null"
+duplicates_only = true
+keep_rule = "best-photo"
+
+[[views]]
+name = "by-hash"
+description = "Byte-identical files (run a hash first)"
+group_by = ["content.hash"]
+filter = "content.hash is not null"
+duplicates_only = true
+keep_rule = "oldest"
+
+[[keep_rules]]
+name = "lower-resolution"
+description = "Mark versions with a lower resolution than the best one; keep all ties"
+mode = "drop-dominated"
+rank = ["video.resolution desc"]
+
+[[keep_rules]]
+name = "best-video"
+description = "Keep one file: highest resolution, then modern codec, then smallest"
+mode = "keep-best"
+rank = ["video.resolution desc", "video.codec in [hevc, av1, h264]", "fs.size asc"]
+
+[[keep_rules]]
+name = "best-photo"
+description = "Keep one photo: most pixels, unedited original, then oldest"
+mode = "keep-best"
+rank = ["image.pixels desc", "exif.software is null", "fs.mtime asc"]
+
+[[keep_rules]]
+name = "oldest"
+description = "Keep the oldest copy"
+mode = "keep-best"
+rank = ["fs.mtime asc", "fs.path asc"]
