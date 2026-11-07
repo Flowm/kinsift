@@ -189,6 +189,42 @@ fn overlaps(a: &Path, b: &Path) -> bool {
     a.starts_with(b) || b.starts_with(a)
 }
 
+/// Re-read specific files of a root (after a rename or undo), running all
+/// applicable scan-stage providers again. Missing files are dropped.
+pub fn refresh_files(
+    index: &mut Index,
+    providers: &[Box<dyn Provider>],
+    priority: &Priority,
+    root: &Path,
+    rels: &[String],
+) -> Result<usize> {
+    let root_row = index.ensure_root(root)?;
+    let mut present = Vec::new();
+    for rel in rels {
+        match std::fs::symlink_metadata(root.join(rel)) {
+            Ok(m) if m.is_file() => present.push((rel.clone(), m.len(), mtime_ns(&m))),
+            _ => index.delete_by_rel(root, rel)?,
+        }
+    }
+    let ids = index.upsert_files(root_row.id, &present)?;
+    index.clear_extractions(&ids)?;
+    let mut writes = Vec::new();
+    for ((rel, size, mtime), id) in present.iter().zip(&ids) {
+        let abs = root.join(rel);
+        let ctx = FileCtx { root, abs: &abs, rel, size: *size, mtime_ns: *mtime };
+        for p in providers.iter().filter(|p| p.stage() != Stage::Hash && p.applies(&ctx)) {
+            writes.push(ExtractionWrite {
+                file_id: *id,
+                provider: p.name(),
+                version: p.version(),
+                outcome: extract_guarded(p.as_ref(), &ctx),
+            });
+        }
+    }
+    index.write_extractions(writes, priority)?;
+    Ok(present.len())
+}
+
 /// Run a provider, turning a panic (a parser bug on a malformed file) into
 /// an extraction error for that file instead of aborting the whole scan.
 fn extract_guarded(

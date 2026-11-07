@@ -15,8 +15,11 @@ clean up the groups that look wrong.
 It is the successor of [mdupes](https://github.com/Flowm/mdupes), generalized
 from "duplicate videos" to "any grouping by metadata".
 
-> Status: early development. Milestone 1 (index, scanning, CLI queries)
-> works. The TUI, deletion and container metadata are next. See
+> Status: early development. What works:
+> - index, scanning and CLI queries (milestone 1)
+> - the TUI with safe deletion (milestone 2)
+>
+> Container metadata (MKV/MP4, EXIF) and hashing are next. See
 > [docs/DECISIONS.md](docs/DECISIONS.md) for the design.
 
 ## Build
@@ -28,7 +31,77 @@ cargo build --release
 
 ## Usage
 
-Scan a few roots, then rescan them later:
+Scan a few roots, then open the TUI:
+
+```sh
+kinsift scan /mnt/series /mnt/movies
+kinsift tui --view series
+kinsift
+```
+
+Running `kinsift` with no arguments opens the TUI too.
+
+### The TUI
+
+| Key | Action |
+|---|---|
+| `↑↓` `jk` `←→` `hl` `Enter` | move, expand/collapse |
+| `e` `E` `c` `C` | expand subtree/everything, collapse subtree/everything |
+| `v` | choose a view |
+| `b` | group by other fields |
+| `/` | filter |
+| `f` | duplicate groups only |
+| `s` | sort |
+| `i` | details: every field and which provider set it |
+| `m` | mark a file; on a group, mark by field value (e.g. all `720p`) |
+| `K` | apply a keep-rule (e.g. *lower-resolution*) to the duplicate groups below the cursor |
+| `D` | review and remove marked files |
+| `d` | remove the file under the cursor |
+| `r` | rename |
+| `u` | undo the last batch |
+| `R` | rescan in the background |
+| `?` | help |
+
+### Deleting safely
+
+Nothing is removed without a review screen. That screen shows, per root,
+what will happen:
+- **OS trash**, if the root is on the same file system as your home
+  directory
+- **quarantine**, otherwise: a plain rename into `<root>/.kinsift-trash/`.
+  It never copies across file systems.
+- **permanent delete**, only if you configure it for a root, and only after
+  typing `DELETE`
+
+Before anything moves, kinsift checks the following:
+- Each file must be unchanged since the scan.
+- A group's last remaining copy is never removed.
+- Files that are not in any duplicate group are flagged *only copy* and left
+  out unless you include them.
+- Roots that are read-only, unmounted, or on a different device than at the
+  last scan are blocked.
+- Files on a disk mounted inside a root are left alone. Add that disk as its
+  own root.
+- Roots may not overlap: scanning a folder inside (or around) a known root is
+  refused, because the same file would be indexed twice.
+- While a background rescan or hash runs, the TUI makes no changes.
+
+A rescan never removes files from the index if some folders couldn't be
+read. Files whose path is not valid UTF-8 are skipped and counted.
+
+Every change is journaled; `u` in the TUI undoes the last batch.
+
+```sh
+kinsift roots
+kinsift trash list
+kinsift trash restore <batch>
+kinsift trash purge --older-than 30
+```
+
+`kinsift roots` shows each root's delete strategy. `trash restore` moves a
+quarantine batch back, in every root it touched. `trash purge` frees the space for good.
+
+Rescan later with:
 
 ```sh
 kinsift scan /mnt/series /mnt/movies

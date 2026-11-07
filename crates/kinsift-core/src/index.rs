@@ -325,6 +325,27 @@ impl Index {
         Ok(())
     }
 
+    /// Forget previous provider output so the next extraction re-runs everything.
+    pub fn clear_extractions(&mut self, ids: &[FileId]) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        for id in ids {
+            tx.execute("DELETE FROM extractions WHERE file_id = ?1", [id])?;
+            tx.execute("DELETE FROM field_values WHERE file_id = ?1", [id])?;
+            tx.execute("DELETE FROM fields WHERE file_id = ?1", [id])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Remove the entry for a relative path in a root, if present.
+    pub fn delete_by_rel(&self, root: &Path, rel: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM files WHERE rel_path = ?2 AND root_id = (SELECT id FROM roots WHERE path = ?1)",
+            params![path_str(root), rel],
+        )?;
+        Ok(())
+    }
+
     /// Move a file's index entry after a rename on disk.
     pub fn rename_file(&self, id: FileId, new_rel: &str) -> Result<()> {
         self.conn.execute("UPDATE files SET rel_path = ?2 WHERE id = ?1", params![id, new_rel])?;
@@ -616,6 +637,25 @@ impl Index {
                 |r| r.get(0),
             )
             .optional()?)
+    }
+
+    /// Files purged from a quarantine batch folder can no longer be undone.
+    /// Only the quarantine actions into that folder are retired: one batch
+    /// can span several roots and strategies.
+    pub fn retire_quarantine(&self, batch: &str, batch_dir: &Path) -> Result<()> {
+        let Some(name) = batch_dir.file_name().and_then(|n| n.to_str()) else { return Ok(()) };
+        self.conn.execute(
+            "UPDATE actions SET undone = 1
+             WHERE batch = ?1 AND op = 'quarantine' AND (instr(dst, '/' || ?2 || '/') > 0 OR instr(dst, '\\' || ?2 || '\\') > 0)",
+            params![batch, name],
+        )?;
+        Ok(())
+    }
+
+    /// Remove a journal entry for an action that did not happen.
+    pub fn delete_action(&self, action_id: i64) -> Result<()> {
+        self.conn.execute("DELETE FROM actions WHERE id = ?1", [action_id])?;
+        Ok(())
     }
 
     pub fn mark_undone(&self, action_id: i64) -> Result<()> {

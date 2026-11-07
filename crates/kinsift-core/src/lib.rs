@@ -2,13 +2,16 @@
 //!
 //! This crate has no UI code. Frontends (CLI, TUI, later GUI) call into it.
 
+pub mod actions;
 pub mod config;
 pub mod domain;
 pub mod error;
 pub mod filter;
 pub mod index;
+pub mod keep;
 pub mod normalize;
 pub mod provider;
+pub mod quarantine;
 pub mod query;
 pub mod scan;
 pub mod value;

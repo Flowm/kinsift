@@ -174,6 +174,8 @@ them. Where the implementation refined a decision, the note says so.
 
 ## Milestones
 
+Status: M1 and M2 are done.
+
 - **M1, the pipeline:**
   - workspace
   - fs and hunch providers

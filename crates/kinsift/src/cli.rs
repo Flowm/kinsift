@@ -1,14 +1,18 @@
-use std::io::{IsTerminal, Write};
+use std::io::{BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
+use kinsift_core::actions;
 use kinsift_core::config::{self, Config, DEFAULT_CONFIG, View};
 use kinsift_core::filter::Filter;
+use kinsift_core::index::now_unix;
 use kinsift_core::index::{FileEntry, Index};
 use kinsift_core::provider::{Priority, Provider};
+use kinsift_core::quarantine;
 use kinsift_core::query::{Node, SortBy, build_tree, sort_tree};
-use kinsift_core::scan::{ScanEvent, ScanOptions, scan_root};
+use kinsift_core::scan::{ScanEvent, ScanOptions, refresh_files, scan_root};
 use kinsift_core::value::{Value, format_size, format_unix};
 use serde_json::json;
 
@@ -27,6 +31,12 @@ pub struct Args {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
+    /// Open the terminal UI (the default)
+    Tui {
+        /// Start in this view
+        #[arg(long, short)]
+        view: Option<String>,
+    },
     /// Scan roots and update the index (all known roots if none are given)
     Scan {
         roots: Vec<PathBuf>,
@@ -81,6 +91,29 @@ pub enum Command {
         #[command(subcommand)]
         action: ConfigAction,
     },
+    /// Manage kinsift's quarantine (files removed from roots outside your home file system)
+    Trash {
+        #[command(subcommand)]
+        action: TrashAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum TrashAction {
+    /// List quarantine batches
+    List,
+    /// Move a batch's files back to where they were
+    Restore { batch: String },
+    /// Delete batches permanently (all, or the given ones)
+    Purge {
+        batches: Vec<String>,
+        /// Only batches older than this many days
+        #[arg(long, value_name = "DAYS")]
+        older_than: Option<u32>,
+        /// Do not ask for confirmation
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -103,7 +136,7 @@ pub struct Context {
     pub config_path: Option<PathBuf>,
     pub index_path: PathBuf,
     pub index: Index,
-    pub providers: Vec<Box<dyn Provider>>,
+    pub providers: Arc<Vec<Box<dyn Provider>>>,
     pub priority: Priority,
 }
 
@@ -120,20 +153,35 @@ impl Context {
         let providers = kinsift_providers::default_providers();
         let priority = Priority::new(config.providers.priority.clone(), &providers);
         kinsift_core::sync_priority(&mut index, &config, &priority)?;
-        Ok(Context { config, config_path, index_path, index, providers, priority })
+        Ok(Context { config, config_path, index_path, index, providers: Arc::new(providers), priority })
     }
 }
 
 pub fn run(args: Args) -> Result<()> {
-    let Some(command) = &args.command else {
-        bail!("no command given; try `kinsift --help` (the TUI arrives in a later milestone)");
-    };
+    let command = args.command.as_ref().unwrap_or(&Command::Tui { view: None });
     if let Command::Config { action: ConfigAction::DumpDefaults } = command {
         print!("{DEFAULT_CONFIG}");
         return Ok(());
     }
     let mut ctx = Context::open(&args)?;
     match command {
+        Command::Tui { view } => {
+            if let Some(v) = view
+                && ctx.config.view(v).is_none()
+            {
+                bail!("no view named `{v}`; see `kinsift views`");
+            }
+            let tui = kinsift_tui::TuiContext {
+                config: ctx.config,
+                index: ctx.index,
+                index_path: ctx.index_path,
+                providers: ctx.providers,
+                priority: ctx.priority,
+                start_view: view.clone(),
+            };
+            kinsift_tui::run(tui)
+        }
+        Command::Trash { action } => cmd_trash(&mut ctx, action),
         Command::Scan { roots, force_prune } => cmd_scan(&mut ctx, roots, *force_prune),
         Command::Query { view, group_by, filter, duplicates, sort, fields, json } => {
             let view = resolve_view(&ctx.config, view.as_deref(), group_by, filter.as_deref(), *duplicates)?;
@@ -426,6 +474,11 @@ fn cmd_roots(ctx: &Context, action: Option<&RootsAction>) -> Result<()> {
             for r in ctx.index.roots()? {
                 let when = r.last_scan.map(format_unix).unwrap_or_else(|| "never".into());
                 println!("{}  ({} files, last scan {when})", r.path.display(), r.file_count);
+                let policy = actions::root_policy(&r, ctx.config.root_config(&r.path));
+                match &policy.blocked {
+                    Some(reason) => println!("  delete: blocked: {reason}"),
+                    None => println!("  delete: {}", policy.explanation),
+                }
             }
         }
         Some(RootsAction::Remove { path }) => {
@@ -434,6 +487,80 @@ fn cmd_roots(ctx: &Context, action: Option<&RootsAction>) -> Result<()> {
                 println!("forgot {} (files on disk untouched)", p.display());
             } else {
                 bail!("{} is not a known root", p.display());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn cmd_trash(ctx: &mut Context, action: &TrashAction) -> Result<()> {
+    let dirs: Vec<PathBuf> =
+        actions::root_policies(&ctx.index, &ctx.config)?.into_iter().map(|p| p.quarantine_dir).collect();
+    let batches = quarantine::list(&dirs)?;
+    match action {
+        TrashAction::List => {
+            if batches.is_empty() {
+                println!("quarantine is empty");
+            }
+            for b in &batches {
+                let age = (now_unix() - b.created) / 86_400;
+                println!("{}  {}  {} files  {}  {age}d old", b.id, b.root.display(), b.files, format_size(b.size));
+            }
+            let (size, _) = quarantine::usage(&batches);
+            if size > 0 {
+                println!("total {}", format_size(size));
+            }
+        }
+        TrashAction::Restore { batch } => {
+            // One batch has a folder per root it touched.
+            let parts: Vec<&quarantine::Batch> = batches.iter().filter(|b| &b.id == batch).collect();
+            if parts.is_empty() {
+                bail!("no quarantine batch `{batch}`");
+            }
+            let mut restored = 0;
+            for b in parts {
+                let out = quarantine::restore(b)?;
+                refresh_files(&mut ctx.index, &ctx.providers, &ctx.priority, &b.root, &out.restored)?;
+                restored += out.restored.len();
+                for (rel, reason) in &out.failed {
+                    println!("  not restored: {}: {reason}", b.root.join(rel).display());
+                }
+            }
+            for a in ctx.index.actions(Some(batch))? {
+                if a.op == "quarantine" && !a.undone && a.src.exists() {
+                    ctx.index.mark_undone(a.id)?;
+                }
+            }
+            println!("restored {restored} files");
+        }
+        TrashAction::Purge { batches: wanted, older_than, yes } => {
+            let now = now_unix();
+            let targets: Vec<&quarantine::Batch> = batches
+                .iter()
+                .filter(|b| wanted.is_empty() || wanted.contains(&b.id))
+                .filter(|b| older_than.is_none_or(|d| now - b.created > i64::from(d) * 86_400))
+                .collect();
+            if targets.is_empty() {
+                println!("nothing to purge");
+                return Ok(());
+            }
+            let total: u64 = targets.iter().map(|b| b.size).sum();
+            let files: usize = targets.iter().map(|b| b.files).sum();
+            println!("This PERMANENTLY deletes {files} files ({}) in {} batches.", format_size(total), targets.len());
+            if !yes {
+                print!("Type `purge` to continue: ");
+                std::io::stdout().flush()?;
+                let mut line = String::new();
+                std::io::stdin().lock().read_line(&mut line)?;
+                if line.trim() != "purge" {
+                    println!("aborted; nothing deleted");
+                    return Ok(());
+                }
+            }
+            for b in targets {
+                quarantine::purge(b)?;
+                ctx.index.retire_quarantine(&b.id, &b.dir)?;
+                println!("purged {} ({})", b.id, b.root.display());
             }
         }
     }
