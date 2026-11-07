@@ -9,10 +9,20 @@ rust-version.workspace = true
 
 [dependencies]
 hunch = "2.0.4"
+imagesize = { version = "0.15.0", optional = true }
+kamadak-exif = { version = "0.6.2", optional = true }
 kinsift-core = { version = "0.1.0", path = "../kinsift-core" }
 log = "0.4.35"
 regex = "1.13.1"
 serde_json = "1.0.154"
+
+[features]
+default = ["video", "image", "external"]
+video = []
+image = ["dep:kamadak-exif", "dep:imagesize"]
+# ffprobe/exiftool providers, active only when the tools are on PATH;
+# `external` needs the video and image types.
+external = ["video", "image"]
 
 [lints]
 workspace = true
@@ -20,3 +30,4 @@ workspace = true
 [dev-dependencies]
 dirs = "7.0.0"
 tempfile = "3.27.0"
+

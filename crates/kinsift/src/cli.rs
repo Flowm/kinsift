@@ -77,6 +77,15 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Hash files that share a size with another file, so `by-hash` can find byte-identical copies
+    Hash {
+        /// Only files in this view
+        #[arg(long, short)]
+        view: Option<String>,
+        /// Only files matching this filter
+        #[arg(long, short)]
+        filter: Option<String>,
+    },
     /// List or remove scan roots
     Roots {
         #[command(subcommand)]
@@ -182,6 +191,7 @@ pub fn run(args: Args) -> Result<()> {
             kinsift_tui::run(tui)
         }
         Command::Trash { action } => cmd_trash(&mut ctx, action),
+        Command::Hash { view, filter } => cmd_hash(&mut ctx, view.as_deref(), filter.as_deref()),
         Command::Scan { roots, force_prune } => cmd_scan(&mut ctx, roots, *force_prune),
         Command::Query { view, group_by, filter, duplicates, sort, fields, json } => {
             let view = resolve_view(&ctx.config, view.as_deref(), group_by, filter.as_deref(), *duplicates)?;
@@ -564,5 +574,43 @@ fn cmd_trash(ctx: &mut Context, action: &TrashAction) -> Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+fn cmd_hash(ctx: &mut Context, view: Option<&str>, filter: Option<&str>) -> Result<()> {
+    let mut f = match view {
+        Some(v) => {
+            let view = ctx.config.view(v).ok_or_else(|| anyhow!("no view named `{v}`"))?;
+            view.filter.as_deref().map(Filter::parse).transpose()?
+        }
+        None => None,
+    };
+    if let Some(extra) = filter {
+        let extra = Filter::parse(extra)?;
+        f = Some(match f {
+            Some(existing) => existing.and(extra),
+            None => extra,
+        });
+    }
+    let entries = ctx.index.load_entries(f.as_ref(), None)?;
+    let tty = std::io::stderr().is_terminal();
+    let progress = |stage: &str, done: usize, total: usize| {
+        if tty {
+            eprint!("\r\x1b[2K{stage}: {done}/{total}");
+        }
+    };
+    let r = kinsift_core::hash::hash_duplicates(&mut ctx.index, &entries, &ctx.priority, &progress)?;
+    if tty {
+        eprint!("\r\x1b[2K");
+    }
+    println!(
+        "{} candidates (shared sizes): {} partial and {} full hashes computed, {} read, {} errors",
+        r.candidates,
+        r.partial_hashed,
+        r.full_hashed,
+        format_size(r.bytes_read),
+        r.errors
+    );
+    println!("{} groups of byte-identical files; see `kinsift query --view by-hash`", r.duplicate_groups);
     Ok(())
 }

@@ -15,7 +15,10 @@
 [providers.priority]
 # Highest priority first. Providers not listed fall back to their built-in
 # priority (container readers beat values guessed from the file name).
-video = ["mkv", "mp4", "name"]
+video = ["mkv", "mp4", "ffprobe", "name"]
+audio = ["mkv", "mp4", "ffprobe"]
+image = ["image", "exiftool"]
+exif = ["image", "exiftool"]
 
 [trash]
 remind_size = "50GiB"

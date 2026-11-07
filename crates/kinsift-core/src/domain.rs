@@ -90,7 +90,7 @@ domain_struct!(
     VideoMeta, "video" {
         width: i64 => Value::Int,
         height: i64 => Value::Int,
-        /// Resolution class: 4320, 2160, 1440, 1080, 720, 576, 480 (from
+        /// Resolution class: 4320, 2160, 1080, 720, 576, 480 (from
         /// width and height, so 1920x800 scope encodes count as 1080).
         resolution: i64 => Value::Int,
         /// Normalized codec name: `hevc`, `h264`, `av1`, `vp9`, `mpeg4`, ...
@@ -195,17 +195,11 @@ pub const KNOWN_FIELDS: &[FieldInfo] = &[
     FieldInfo { key: "content.hash", label: "", description: "full content hash (on demand)" },
 ];
 
-/// Resolution class from frame size: the larger of what width and height suggest.
+/// Resolution class from frame size, width first (so 1920x800 scope encodes
+/// count as 1080 and 2560x1080 ultrawide encodes too).
 pub fn resolution_class(width: i64, height: i64) -> i64 {
-    const CLASSES: [(i64, i64, i64); 7] = [
-        (4320, 7600, 4000),
-        (2160, 3800, 2000),
-        (1440, 2500, 1400),
-        (1080, 1900, 1000),
-        (720, 1260, 700),
-        (576, 1000, 560),
-        (480, 0, 0),
-    ];
+    const CLASSES: [(i64, i64, i64); 5] =
+        [(4320, 7000, 4000), (2160, 3200, 2000), (1080, 1800, 1000), (720, 1200, 700), (576, 1000, 560)];
     CLASSES.iter().find(|(_, w, h)| width >= *w || height >= *h).map(|c| c.0).unwrap_or(480)
 }
 
@@ -233,6 +227,9 @@ mod tests {
         assert_eq!(resolution_class(1280, 720), 720);
         assert_eq!(resolution_class(720, 576), 576);
         assert_eq!(resolution_class(640, 360), 480);
+        assert_eq!(resolution_class(2582, 1080), 1080, "ultrawide 1080p");
+        assert_eq!(resolution_class(960, 480), 480);
+        assert_eq!(resolution_class(720, 576), 576, "PAL DVD");
     }
 
     #[test]

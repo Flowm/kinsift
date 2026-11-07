@@ -81,7 +81,11 @@ them. Where the implementation refined a decision, the note says so.
   - *Refinement:* the shared field is `video.resolution`, a resolution class
     (2160, 1080, 720, ...) derived from width and height, not
     `video.height`. Otherwise 1920×800 scope encodes would look like a
-    conflict with their `1080p` name.
+    conflict with their `1080p` name. Classes go by width first,
+    so 2560×1080 ultrawide encodes count as 1080 too.
+- **Container readers** detect the format from the file's first bytes, not
+  its extension; MP4 files named `.mkv` exist in the wild. A mismatch is
+  recorded in the raw output.
 
 ## Scanning
 
@@ -174,7 +178,7 @@ them. Where the implementation refined a decision, the note says so.
 
 ## Milestones
 
-Status: M1 and M2 are done.
+Status: M1, M2 and M3 are done.
 
 - **M1, the pipeline:**
   - workspace

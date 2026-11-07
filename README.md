@@ -15,12 +15,25 @@ clean up the groups that look wrong.
 It is the successor of [mdupes](https://github.com/Flowm/mdupes), generalized
 from "duplicate videos" to "any grouping by metadata".
 
-> Status: early development. What works:
-> - index, scanning and CLI queries (milestone 1)
-> - the TUI with safe deletion (milestone 2)
+> Status: v1 feature set, early days. Works:
+> - indexing, the TUI with safe deletion
+> - MKV/MP4 and EXIF metadata
+> - staged content hashing
 >
-> Container metadata (MKV/MP4, EXIF) and hashing are next. See
-> [docs/DECISIONS.md](docs/DECISIONS.md) for the design.
+> See [docs/DECISIONS.md](docs/DECISIONS.md) for the design.
+
+## What it reads
+
+| Domain | Source | Examples |
+|---|---|---|
+| `fs` | the file system | `fs.path`, `fs.dir`, `fs.ext`, `fs.size`, `fs.mtime` |
+| `name` | the path, parsed with [hunch](https://crates.io/crates/hunch) | `name.title`, `name.season`, `name.episode`, `name.year` |
+| `video`, `audio` | MKV/WebM and MP4/MOV headers (built in, pure Rust); `ffprobe` for other containers if installed | `video.resolution`, `video.codec`, `video.hdr`, `video.fps`, `audio.languages` |
+| `image`, `exif` | image headers and EXIF (built in); `exiftool` for CR3/RAF/RW2/ORF if installed | `exif.taken_at`, `exif.camera`, `image.pixels` |
+| `content` | on demand: `kinsift hash` or `H` in the TUI | `content.hash` |
+
+When the file name and the contents disagree, the contents win. The keys
+that disagree are listed in `meta.conflicts`; see the `mislabeled` view.
 
 ## Build
 
@@ -60,6 +73,7 @@ Running `kinsift` with no arguments opens the TUI too.
 | `r` | rename |
 | `u` | undo the last batch |
 | `R` | rescan in the background |
+| `H` | hash this view's files that share a size (feeds the `by-hash` view) |
 | `?` | help |
 
 ### Deleting safely
@@ -101,11 +115,19 @@ kinsift trash purge --older-than 30
 `kinsift roots` shows each root's delete strategy. `trash restore` moves a
 quarantine batch back, in every root it touched. `trash purge` frees the space for good.
 
-Rescan later with:
+### From the command line
+
+Rescan every known root:
 
 ```sh
-kinsift scan /mnt/series /mnt/movies
 kinsift scan
+```
+
+Find byte-identical files:
+
+```sh
+kinsift hash
+kinsift query --view by-hash
 ```
 
 Run views:

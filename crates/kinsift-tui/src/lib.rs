@@ -52,6 +52,10 @@ fn event_loop(terminal: &mut DefaultTerminal, app: &mut App) -> anyhow::Result<(
             app.request_rescan = false;
             start_scan(app);
         }
+        if app.request_hash {
+            app.request_hash = false;
+            start_hash(app);
+        }
         poll_scan(app);
     }
     Ok(())
@@ -103,6 +107,33 @@ pub fn start_scan(app: &mut App) {
     app.scan = Some(ScanJob { rx, progress: "starting scan".into() });
 }
 
+/// Hash the plausible duplicates of the current view in the background.
+pub fn start_hash(app: &mut App) {
+    if app.scan.is_some() {
+        return app.set_status("a background job is already running");
+    }
+    let entries = app.entries.clone();
+    let (tx, rx) = mpsc::channel();
+    let path = app.ctx.index_path.clone();
+    let priority = app.ctx.priority.clone();
+    std::thread::spawn(move || {
+        let result = (|| -> Result<Vec<String>, String> {
+            let mut index = Index::open(&path).map_err(|e| e.to_string())?;
+            let progress = |stage: &str, done: usize, total: usize| {
+                let _ = tx.send(ScanMsg::Progress(format!("{stage} {done}/{total}")));
+            };
+            let r = kinsift_core::hash::hash_duplicates(&mut index, &entries, &priority, &progress)
+                .map_err(|e| e.to_string())?;
+            Ok(vec![format!(
+                "hashed {} candidates, {} groups of identical files (view by-hash)",
+                r.candidates, r.duplicate_groups
+            )])
+        })();
+        let _ = tx.send(ScanMsg::Finished(result));
+    });
+    app.scan = Some(ScanJob { rx, progress: "hashing".into() });
+}
+
 fn poll_scan(app: &mut App) {
     let Some(job) = app.scan.as_mut() else { return };
     let mut finished = None;
@@ -124,6 +155,7 @@ fn poll_scan(app: &mut App) {
                 job.progress = format!("reading {}: {done}/{total}", root.display())
             }
             ScanMsg::Event(ScanEvent::Done(_)) => {}
+            ScanMsg::Progress(p) => job.progress = p,
             ScanMsg::Finished(r) => finished = Some(r),
         }
     }
@@ -132,7 +164,7 @@ fn poll_scan(app: &mut App) {
         match result {
             Ok(summary) => {
                 let _ = app.reload();
-                app.set_status(format!("scan done: {}", summary.join("; ")));
+                app.set_status(format!("done: {}", summary.join("; ")));
             }
             Err(e) => app.set_status(format!("scan failed: {e}")),
         }

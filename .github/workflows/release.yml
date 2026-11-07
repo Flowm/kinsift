@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            zigbuild: true
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            zigbuild: true
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - name: Install cargo-zigbuild
+        if: matrix.zigbuild
+        run: |
+          pip install ziglang
+          cargo install --locked cargo-zigbuild
+      - name: Build (static musl via zig)
+        if: matrix.zigbuild
+        run: cargo zigbuild --release --locked -p kinsift --target ${{ matrix.target }}
+      - name: Build
+        if: ${{ !matrix.zigbuild }}
+        run: cargo build --release --locked -p kinsift --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        run: |
+          name=kinsift-${GITHUB_REF_NAME}-${{ matrix.target }}
+          mkdir "$name"
+          cp README.md LICENSE "$name/"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp target/${{ matrix.target }}/release/kinsift.exe "$name/"
+            7z a "$name.zip" "$name" >/dev/null
+          else
+            cp target/${{ matrix.target }}/release/kinsift "$name/"
+            tar czf "$name.tar.gz" "$name"
+          fi
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          files: kinsift-*.*

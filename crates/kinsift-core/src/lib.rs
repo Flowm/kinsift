@@ -7,6 +7,7 @@ pub mod config;
 pub mod domain;
 pub mod error;
 pub mod filter;
+pub mod hash;
 pub mod index;
 pub mod keep;
 pub mod normalize;

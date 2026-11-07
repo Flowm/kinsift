@@ -29,6 +29,7 @@ const HELP: &[(&str, &str)] = &[
     ("r", "rename file"),
     ("u", "undo the last batch"),
     ("R", "rescan all roots in the background"),
+    ("H", "hash files of this view that share a size (for the by-hash view)"),
     ("q", "quit"),
 ];
 

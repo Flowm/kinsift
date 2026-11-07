@@ -123,6 +123,7 @@ impl FileEntry {
 }
 
 /// The result of running one provider on one file.
+#[derive(Clone)]
 pub struct ExtractionWrite {
     pub file_id: FileId,
     pub provider: &'static str,

@@ -76,6 +76,7 @@ pub struct ScanJob {
 
 pub enum ScanMsg {
     Event(ScanEvent),
+    Progress(String),
     Finished(Result<Vec<String>, String>),
 }
 
@@ -107,6 +108,8 @@ pub struct App {
     pub review_pending: Option<Plan>,
     /// Set by `R`; the event loop starts a background scan.
     pub request_rescan: bool,
+    /// Set by `H`; the event loop hashes the current view in the background.
+    pub request_hash: bool,
     pub quit: bool,
 }
 
@@ -139,6 +142,7 @@ impl App {
             quarantine_note: None,
             review_pending: None,
             request_rescan: false,
+            request_hash: false,
             quit: false,
         };
         app.dup_only = app.base_view().duplicates_only;
@@ -385,6 +389,7 @@ impl App {
             KeyCode::Char('r') => self.open_rename(),
             KeyCode::Char('u') => self.ask_undo(),
             KeyCode::Char('R') => self.request_rescan = true,
+            KeyCode::Char('H') => self.request_hash = true,
             KeyCode::Char('?') => self.modal = Some(Modal::Help),
             _ => {}
         }
