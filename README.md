@@ -37,10 +37,35 @@ that disagree are listed in `meta.conflicts`; see the `mislabeled` view.
 
 ## Build
 
+`make help` lists the targets.
+
+- `make build`: a native release binary with your Rust toolchain, at
+  `target/release/kinsift`.
+- `make build-docker`: a static Linux binary built in Docker, at
+  `dist/kinsift`. No Rust toolchain needed. Cross-build with
+  `PLATFORM=linux/arm64`.
+- `make image`: the Docker image `kinsift:dev`.
+
+### Docker
+
+CI publishes the image to `ghcr.io/flowm/kinsift` for `main` and version
+tags, for amd64 and arm64. The index lives in `/data` and the config in
+`/config/config.toml`. Mount your libraries and run as your own user, so
+kinsift acts on files with your permissions:
+
 ```sh
-cargo build --release
-./target/release/kinsift --help
+docker run --rm -it --user "$(id -u):$(id -g)" \
+  -v ~/.local/share/kinsift-docker:/data \
+  -v /mnt/series:/mnt/series \
+  ghcr.io/flowm/kinsift scan /mnt/series
 ```
+
+Use `tui` instead of `scan` for the TUI. Mount roots at the same path as on
+the host, so paths in the index stay valid for both. The container's home is
+`/data`. A root on the same file system as `/data` uses the trash there; any
+other root uses quarantine. `kinsift roots` shows which one each root gets.
+Read-only mounts are blocked. The image does not include `ffprobe` or
+`exiftool`.
 
 ## Usage
 
@@ -180,8 +205,8 @@ with `--index` / `--config` or `KINSIFT_INDEX` / `KINSIFT_CONFIG`.
 ## Development
 
 ```sh
-cargo test --all
-cargo clippy --all-targets -- -D warnings
+make test
+make lint
 ```
 
 Two opt-in accuracy checks for the file name parser:
