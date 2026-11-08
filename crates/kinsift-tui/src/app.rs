@@ -39,6 +39,38 @@ pub enum RowKind {
 pub struct Row {
     pub depth: usize,
     pub kind: RowKind,
+    /// For each level from the top down to this row: is that node the last
+    /// of its siblings? Drives the tree guide lines.
+    pub last: Vec<bool>,
+}
+
+/// Distinct quality values below a group, shown next to its label.
+#[derive(Debug, Clone, Default)]
+pub struct Summary {
+    pub resolutions: BTreeSet<i64>,
+    pub codecs: BTreeSet<String>,
+}
+
+impl Summary {
+    pub fn of(entry: &FileEntry) -> Summary {
+        let mut s = Summary::default();
+        s.add(entry);
+        s
+    }
+
+    fn add(&mut self, entry: &FileEntry) {
+        if let Some(r) = entry.get("video.resolution").and_then(|v| v.as_f64()) {
+            self.resolutions.insert(r as i64);
+        }
+        if let Some(c) = entry.get("video.codec").and_then(|v| v.as_str()) {
+            self.codecs.insert(c.to_owned());
+        }
+    }
+
+    fn merge(&mut self, other: &Summary) {
+        self.resolutions.extend(&other.resolutions);
+        self.codecs.extend(other.codecs.iter().cloned());
+    }
 }
 
 pub enum PickerKind {
@@ -93,6 +125,8 @@ pub struct App {
     pub dup_of: HashMap<usize, String>,
     /// Duplicate group id -> its files.
     pub dup_members: HashMap<String, Vec<usize>>,
+    /// Node id -> quality summary of its subtree.
+    pub summaries: HashMap<String, Summary>,
     pub expanded: HashSet<String>,
     pub rows: Vec<Row>,
     pub cursor: usize,
@@ -128,6 +162,7 @@ impl App {
             tree: Node::default(),
             dup_of: HashMap::new(),
             dup_members: HashMap::new(),
+            summaries: HashMap::new(),
             expanded: HashSet::new(),
             rows: Vec::new(),
             cursor: 0,
@@ -223,6 +258,19 @@ impl App {
             }
         }
         collect(&self.tree, &mut self.dup_of, &mut self.dup_members);
+        fn summarize(n: &Node, entries: &[FileEntry], out: &mut HashMap<String, Summary>) -> Summary {
+            let mut s = Summary::default();
+            for &f in &n.files {
+                s.add(&entries[f]);
+            }
+            for c in &n.children {
+                s.merge(&summarize(c, entries, out));
+            }
+            out.insert(n.id.clone(), s.clone());
+            s
+        }
+        self.summaries.clear();
+        summarize(&self.tree, &self.entries, &mut self.summaries);
         self.flatten_keeping(key);
     }
 
@@ -246,21 +294,27 @@ impl App {
 
     fn flatten_keeping(&mut self, cursor_key: Option<String>) {
         let mut rows = Vec::new();
-        fn walk(app: &App, path: &mut Vec<usize>, depth: usize, rows: &mut Vec<Row>) {
+        fn walk(app: &App, path: &mut Vec<usize>, last: &mut Vec<bool>, rows: &mut Vec<Row>) {
             let node = app.node(path);
+            let depth = last.len();
+            let total = node.children.len() + node.files.len();
             for i in 0..node.children.len() {
                 path.push(i);
-                rows.push(Row { depth, kind: RowKind::Group(path.clone()) });
+                last.push(i + 1 == total);
+                rows.push(Row { depth, kind: RowKind::Group(path.clone()), last: last.clone() });
                 if app.expanded.contains(&app.node(path).id) {
-                    walk(app, path, depth + 1, rows);
+                    walk(app, path, last, rows);
                 }
+                last.pop();
                 path.pop();
             }
-            for &f in &node.files {
-                rows.push(Row { depth, kind: RowKind::File(f) });
+            for (k, &f) in node.files.iter().enumerate() {
+                last.push(node.children.len() + k + 1 == total);
+                rows.push(Row { depth, kind: RowKind::File(f), last: last.clone() });
+                last.pop();
             }
         }
-        walk(self, &mut Vec::new(), 0, &mut rows);
+        walk(self, &mut Vec::new(), &mut Vec::new(), &mut rows);
         self.rows = rows;
         if let Some(key) = cursor_key
             && let Some(pos) = self.rows.iter().position(|r| self.row_key(r).as_ref() == Some(&key))

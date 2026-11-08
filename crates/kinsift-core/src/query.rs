@@ -29,6 +29,9 @@ pub struct Node {
     pub duplicate: bool,
     /// Number of duplicate groups in this subtree.
     pub dup_groups: usize,
+    /// Extra copies in this subtree: files beyond the first in each
+    /// duplicate group (what could be removed).
+    pub redundant: usize,
 }
 
 impl Node {
@@ -191,6 +194,8 @@ impl Builder {
         let size = files.iter().map(|&i| entries[i].size).sum::<u64>() + children.iter().map(|c| c.size).sum::<u64>();
         let file_count = files.len() + children.iter().map(|c| c.file_count).sum::<usize>();
         let dup_groups = usize::from(duplicate) + children.iter().map(|c| c.dup_groups).sum::<usize>();
+        let own_extra = if duplicate { files.len() - 1 } else { 0 };
+        let redundant = own_extra + children.iter().map(|c| c.redundant).sum::<usize>();
         Some(Node {
             label,
             key: self.key,
@@ -202,6 +207,7 @@ impl Builder {
             file_count,
             duplicate,
             dup_groups,
+            redundant,
         })
     }
 }
@@ -245,7 +251,7 @@ pub fn sort_tree(node: &mut Node, by: SortBy, entries: &[FileEntry]) {
                 SortBy::Name => Ordering::Equal,
                 SortBy::Size => b.size.cmp(&a.size),
                 SortBy::Count => b.file_count.cmp(&a.file_count),
-                SortBy::Duplicates => b.dup_groups.cmp(&a.dup_groups),
+                SortBy::Duplicates => b.redundant.cmp(&a.redundant).then(b.dup_groups.cmp(&a.dup_groups)),
             };
             ord.then_with(|| natural_cmp(&a.label, &b.label))
         })
@@ -304,6 +310,8 @@ mod tests {
         assert_eq!(show.children[0].label, "Season 1");
         assert_eq!(tree.dup_groups, 1);
         assert_eq!(tree.file_count, 3);
+        // Show and season report the extra copy too, not just the episode.
+        assert_eq!((tree.redundant, show.redundant, show.children[0].redundant), (1, 1, 1));
 
         let dups = build_tree(&entries, &by(), true);
         assert_eq!(dups.file_count, 2);

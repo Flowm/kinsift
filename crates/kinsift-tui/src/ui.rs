@@ -7,9 +7,9 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap};
 
-use crate::app::{App, Modal, RowKind};
+use crate::app::{App, Modal, RowKind, Summary};
 
 const HELP: &[(&str, &str)] = &[
     ("↑ ↓ j k  PgUp PgDn  g G", "move"),
@@ -52,22 +52,86 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     draw_modal(f, app);
 }
 
+/// Palette, close to Textual's default dark theme that mdupes used.
+mod palette {
+    use ratatui::style::Color;
+    pub const BAR_BG: Color = Color::Rgb(0x1f, 0x2b, 0x4d);
+    pub const BAR_FG: Color = Color::Rgb(0xe0, 0xe0, 0xe0);
+    pub const KEY: Color = Color::Rgb(0xff, 0xb8, 0x3d);
+    pub const CURSOR_BG: Color = Color::Rgb(0x3a, 0x3d, 0x45);
+    pub const GUIDE: Color = Color::Rgb(0x5c, 0x5f, 0x66);
+    pub const DIM: Color = Color::Rgb(0x9a, 0x9d, 0xa3);
+    pub const LABEL: Color = Color::Rgb(0x4e, 0xc9, 0xd6);
+    pub const RES: Color = Color::Rgb(0xd7, 0x99, 0x21);
+    pub const DUP: Color = Color::Rgb(0xff, 0x5c, 0x6c);
+    pub const MARK: Color = Color::Rgb(0xff, 0x5c, 0x6c);
+}
+
 fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     let view = app.effective_view();
-    let mut spans = vec![
-        Span::styled(" kinsift ", Style::new().bold().reversed()),
-        Span::raw(" "),
-        Span::styled(view.name.clone(), Style::new().bold().fg(Color::Cyan)),
-        Span::raw(format!("  by {}", view.group_by.join(" › "))),
-    ];
+    let mut text = format!("kinsift — {}", view.name);
+    text.push_str(&format!("  ·  by {}", view.group_by.join(" › ")));
+    text.push_str(if app.dup_only { "  ·  duplicates only" } else { "  ·  all groups" });
+    text.push_str(&format!("  ·  sort: {}", app.sort.label()));
     if let Some(filter) = &view.filter {
-        spans.push(Span::styled(format!("  where {filter}"), Style::new().fg(Color::DarkGray)));
+        text.push_str(&format!("  ·  where {filter}"));
     }
-    if app.dup_only {
-        spans.push(Span::styled("  [duplicates only]", Style::new().fg(Color::Yellow)));
+    let style = Style::new().bg(palette::BAR_BG).fg(palette::BAR_FG);
+    f.render_widget(Paragraph::new(Line::from(text).centered()).style(style), area);
+}
+
+/// Display name for a codec value, e.g. `hevc` -> `H.265`.
+fn codec_label(c: &str) -> String {
+    match c {
+        "h264" | "avc" => "H.264".into(),
+        "hevc" | "h265" => "H.265".into(),
+        "av1" => "AV1".into(),
+        "vp9" => "VP9".into(),
+        "vp8" => "VP8".into(),
+        "mpeg2video" | "mpeg2" => "MPEG-2".into(),
+        "mpeg4" => "MPEG-4".into(),
+        "vc1" => "VC-1".into(),
+        "xvid" => "Xvid".into(),
+        "divx" => "DivX".into(),
+        other => other.to_uppercase(),
     }
-    spans.push(Span::styled(format!("  sort: {}", app.sort.label()), Style::new().fg(Color::DarkGray)));
-    f.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+/// `(3 files, 10.9 GiB) [720p, 1080p] [H.264] 2 duplicates`
+fn summary_spans(files: Option<usize>, size: u64, summary: Option<&Summary>, redundant: usize) -> Vec<Span<'static>> {
+    let dim = Style::new().fg(palette::DIM);
+    let mut spans = Vec::new();
+    let counts = match files {
+        Some(n) => format!(" ({n} {}, {})", if n == 1 { "file" } else { "files" }, format_size(size)),
+        None => format!(" ({})", format_size(size)),
+    };
+    spans.push(Span::styled(counts, dim));
+    if let Some(s) = summary {
+        if !s.resolutions.is_empty() {
+            let r: Vec<String> = s.resolutions.iter().map(|r| format!("{r}p")).collect();
+            spans.push(Span::styled(format!(" [{}]", r.join(", ")), Style::new().fg(palette::RES)));
+        }
+        if !s.codecs.is_empty() {
+            let mut c: Vec<String> = s.codecs.iter().map(|c| codec_label(c)).collect();
+            c.sort();
+            c.dedup();
+            spans.push(Span::styled(format!(" [{}]", c.join(", ")), dim));
+        }
+    }
+    if redundant > 0 {
+        let word = if redundant == 1 { "duplicate" } else { "duplicates" };
+        spans.push(Span::styled(format!(" {redundant} {word}"), Style::new().fg(palette::DUP)));
+    }
+    spans
+}
+
+fn guides(row: &crate::app::Row) -> String {
+    let mut s = String::new();
+    for &last in &row.last[..row.depth] {
+        s.push_str(if last { "    " } else { "│   " });
+    }
+    s.push_str(if row.last.last().copied().unwrap_or(true) { "└── " } else { "├── " });
+    s
 }
 
 fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
@@ -77,74 +141,71 @@ fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
         } else {
             "No groups to show (try f to show all groups)."
         };
-        f.render_widget(Paragraph::new(msg).fg(Color::DarkGray).wrap(Wrap { trim: true }), area);
+        f.render_widget(Paragraph::new(msg).fg(palette::DIM).wrap(Wrap { trim: true }), area);
         return;
     }
-    let width = area.width as usize;
+    let scroll = app.rows.len() > area.height as usize;
+    let width = area.width.saturating_sub(u16::from(scroll)) as usize;
     let mut lines = Vec::new();
     for (i, row) in app.rows.iter().enumerate().skip(app.offset).take(area.height as usize) {
-        let indent = "  ".repeat(row.depth);
-        let (left, right, style) = match &row.kind {
+        let mut spans = vec![Span::styled(guides(row), Style::new().fg(palette::GUIDE))];
+        match &row.kind {
             RowKind::Group(path) => {
                 let node = app.node(path);
-                let arrow = if app.expanded.contains(&node.id) { "▾" } else { "▸" };
+                let arrow = if app.expanded.contains(&node.id) { "▼ " } else { "▶ " };
+                spans.push(Span::raw(arrow));
+                spans.push(Span::styled(node.label.clone(), Style::new().fg(palette::LABEL)));
+                spans.extend(summary_spans(
+                    Some(node.file_count),
+                    node.size,
+                    app.summaries.get(&node.id),
+                    node.redundant,
+                ));
                 let marked = if app.marked.is_empty() { 0 } else { marked_in(app, node) };
-                let mut right = format!("{:>5} files {:>10}", node.file_count, format_size(node.size));
                 if marked > 0 {
-                    right = format!("{marked} marked  {right}");
+                    spans.push(Span::styled(format!("  ✗ {marked} marked"), Style::new().fg(palette::MARK).bold()));
                 }
-                if node.duplicate {
-                    right.push_str("  dup");
-                } else if node.dup_groups > 0 {
-                    right.push_str(&format!("  {:>3}d", node.dup_groups));
-                } else {
-                    right.push_str("     ");
-                }
-                let style = if node.duplicate { Style::new().fg(Color::Yellow).bold() } else { Style::new().bold() };
-                (format!("{indent}{arrow} {}", node.label), right, style)
             }
             RowKind::File(fi) => {
                 let e = &app.entries[*fi];
                 let marked = app.marked.contains(&e.id);
-                let name = e.rel.rsplit('/').next().unwrap_or(&e.rel);
-                let mut info = String::new();
-                if let Some(r) = e.get("video.resolution") {
-                    info.push_str(&format!("{r}p "));
+                let name = e.rel.rsplit('/').next().unwrap_or(&e.rel).to_owned();
+                if marked {
+                    spans.push(Span::styled("✗ ", Style::new().fg(palette::MARK).bold()));
+                    spans.push(Span::styled(name, Style::new().fg(palette::MARK).crossed_out()));
+                } else {
+                    spans.push(Span::styled(name, Style::new().fg(palette::LABEL)));
                 }
-                if let Some(c) = e.get("video.codec") {
-                    info.push_str(&format!("{c} "));
-                }
-                let mark = if marked { "✗ " } else { "  " };
-                let style = if marked { Style::new().fg(Color::Red) } else { Style::new() };
-                (format!("{indent}{mark}{name}"), format!("{info}{:>10}      ", format_size(e.size)), style)
+                spans.extend(summary_spans(None, e.size, Some(&Summary::of(e)), 0));
             }
-        };
-        let avail = width.saturating_sub(right.chars().count() + 1);
-        let left = truncate(&left, avail);
-        let pad = width.saturating_sub(left.chars().count() + right.chars().count());
-        let mut line = Line::from(vec![
-            Span::styled(left, style),
-            Span::raw(" ".repeat(pad)),
-            Span::raw(right).fg(Color::DarkGray),
-        ]);
+        }
+        let mut line = Line::from(spans);
         if i == app.cursor {
-            line = line.style(Style::new().add_modifier(Modifier::REVERSED));
+            let used = line.width();
+            if used < width {
+                line.push_span(Span::raw(" ".repeat(width - used)));
+            }
+            line = line.style(Style::new().bg(palette::CURSOR_BG).add_modifier(Modifier::BOLD));
         }
         lines.push(line);
     }
-    f.render_widget(Paragraph::new(lines), area);
+    let tree_area = Rect { width: width as u16, ..area };
+    f.render_widget(Paragraph::new(lines), tree_area);
+    if scroll {
+        let mut state = ScrollbarState::new(app.rows.len().saturating_sub(area.height as usize)).position(app.offset);
+        let bar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(None)
+            .end_symbol(None)
+            .track_symbol(Some("▕"))
+            .thumb_symbol("█")
+            .track_style(Style::new().fg(palette::GUIDE))
+            .thumb_style(Style::new().fg(palette::LABEL));
+        f.render_stateful_widget(bar, area, &mut state);
+    }
 }
 
 fn marked_in(app: &App, node: &Node) -> usize {
     node.all_files().iter().filter(|&&i| app.marked.contains(&app.entries[i].id)).count()
-}
-
-fn truncate(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        return s.to_owned();
-    }
-    let keep: String = s.chars().take(max.saturating_sub(1)).collect();
-    format!("{keep}…")
 }
 
 fn draw_detail(f: &mut Frame, app: &mut App, area: Rect) {
@@ -224,9 +285,31 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
         spans.push(Span::styled(format!("  ·  {q}"), Style::new().fg(Color::Yellow)));
     }
     f.render_widget(Paragraph::new(Line::from(spans)), l1);
-    let hints = "m mark  K keep-rule  D review  d delete  r rename  u undo  f dups  v views  / filter  b group  s sort  i info  R rescan  ? help  q quit";
-    f.render_widget(Paragraph::new(hints).fg(Color::DarkGray), l2);
+    let bar = Style::new().bg(palette::BAR_BG).fg(palette::BAR_FG);
+    let key = Style::new().bg(palette::BAR_BG).fg(palette::KEY).bold();
+    let mut hints = Vec::new();
+    for (k, label) in FOOTER {
+        hints.push(Span::styled(format!(" {k} "), key));
+        hints.push(Span::styled(format!("{label} "), bar));
+    }
+    f.render_widget(Paragraph::new(Line::from(hints)).style(bar), l2);
 }
+
+const FOOTER: &[(&str, &str)] = &[
+    ("q", "Quit"),
+    ("v", "Views"),
+    ("/", "Filter"),
+    ("f", "Duplicates"),
+    ("s", "Sort"),
+    ("m", "Mark"),
+    ("K", "Keep-rule"),
+    ("D", "Review marked"),
+    ("d", "Delete"),
+    ("r", "Rename"),
+    ("u", "Undo"),
+    ("i", "Info"),
+    ("?", "Help"),
+];
 
 fn centered(area: Rect, w_pct: u16, h: u16) -> Rect {
     let w = area.width * w_pct / 100;
