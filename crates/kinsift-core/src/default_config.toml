@@ -32,22 +32,22 @@ group_by = ["fs.root", "fs.path"]
 [[views]]
 name = "series"
 description = "TV episodes by show, season and episode"
-group_by = ["name.title", "name.season", "name.episode"]
-filter = "name.type = episode and name.season is not null and name.episode is not null"
+group_by = ["media.title", "media.season", "media.episode"]
+filter = "media.type = episode and media.season is not null and media.episode is not null"
 keep_rule = "lower-resolution"
 
 [[views]]
 name = "movies"
 description = "Movies by title and year"
-group_by = ["name.title", "name.year"]
-filter = "name.type = movie"
+group_by = ["media.title", "media.year"]
+filter = "media.type = movie"
 keep_rule = "lower-resolution"
 
 [[views]]
 name = "same-folder"
 description = "Several versions of the same item in one folder"
-group_by = ["fs.root", "fs.dir", "name.title", "name.year", "name.season", "name.episode"]
-filter = "name.title is not null"
+group_by = ["fs.root", "fs.dir", "media.title", "media.year", "media.season", "media.episode"]
+filter = "media.title is not null"
 duplicates_only = true
 keep_rule = "best-video"
 

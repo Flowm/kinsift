@@ -967,8 +967,8 @@ fn mark_options(entries: &[FileEntry], files: &[usize]) -> Vec<(String, Vec<usiz
         "fs.size",
         "fs.mtime",
         "fs.root",
-        "name.episode_title",
-        "name.confidence",
+        "media.episode_title",
+        "media.confidence",
         "content.hash",
         "content.partial_hash",
     ];

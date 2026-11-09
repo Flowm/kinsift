@@ -104,18 +104,18 @@ fn private_corpus() {
                 .map(|c| c[1].parse::<i64>().unwrap())
                 .or_else(|| specials_dir.is_match(&parent).then_some(0));
             let e = name::parse(path);
-            let title = get(&e, "name.title").map(|v| title_key(&v.to_string()));
-            let kind = get(&e, "name.type").map(|v| v.to_string());
+            let title = get(&e, "media.title").map(|v| title_key(&v.to_string()));
+            let kind = get(&e, "media.type").map(|v| v.to_string());
             if let Some(season) = season {
                 let expected = title_key(&year_suffix.replace(&grand, ""));
                 episodes.n += 1;
                 episodes.title += usize::from(title.as_deref() == Some(expected.as_str()));
-                episodes.number += usize::from(get(&e, "name.season") == Some(Value::Int(season)));
+                episodes.number += usize::from(get(&e, "media.season") == Some(Value::Int(season)));
                 episodes.kind += usize::from(kind.as_deref() == Some("episode"));
             } else if let Some(c) = movie_dir.captures(&parent) {
                 movies.n += 1;
                 movies.title += usize::from(title.as_deref() == Some(title_key(&c[1]).as_str()));
-                movies.number += usize::from(get(&e, "name.year") == Some(Value::Int(c[2].parse().unwrap())));
+                movies.number += usize::from(get(&e, "media.year") == Some(Value::Int(c[2].parse().unwrap())));
                 movies.kind += usize::from(kind.as_deref() == Some("movie"));
             } else {
                 skipped += 1;

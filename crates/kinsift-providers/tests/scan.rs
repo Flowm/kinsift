@@ -36,10 +36,10 @@ fn scan_query_rescan() {
     let r = scan_root(&mut index, &providers, &priority, root, &opts, &|_| {}).unwrap();
     assert_eq!((r.found, r.new, r.pruned), (4, 4, 0));
 
-    let filter = Filter::parse("name.type = episode").unwrap();
+    let filter = Filter::parse("media.type = episode").unwrap();
     let entries = index.load_entries(Some(&filter), None).unwrap();
     assert_eq!(entries.len(), 3);
-    let tree = build_tree(&entries, &["name.title".into(), "name.season".into(), "name.episode".into()], true);
+    let tree = build_tree(&entries, &["media.title".into(), "media.season".into(), "media.episode".into()], true);
     assert_eq!(tree.dup_groups, 1);
     assert_eq!(tree.file_count, 2);
 
@@ -90,7 +90,7 @@ fn inspect_sources_and_priority() {
     let entry =
         index.find_by_path(&root.join("Glass Orchard (2021)/Glass.Orchard.2021.2160p.UHD.x265.mkv")).unwrap().unwrap();
     assert_eq!(entry.get("video.resolution"), Some(&Value::Int(2160)));
-    assert_eq!(entry.get("name.year"), Some(&Value::Int(2021)));
+    assert_eq!(entry.get("media.year"), Some(&Value::Int(2021)));
     let sources = index.sources(entry.id).unwrap();
     assert!(sources.iter().any(|s| s.key == "video.resolution" && s.provider == "name" && s.effective));
     let raw = index.extractions(entry.id).unwrap();

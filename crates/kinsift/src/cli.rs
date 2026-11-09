@@ -49,10 +49,10 @@ pub enum Command {
         /// Use a saved view (see `kinsift views`)
         #[arg(long, short)]
         view: Option<String>,
-        /// Comma-separated group-by fields, e.g. name.title,name.season
+        /// Comma-separated group-by fields, e.g. media.title,media.season
         #[arg(long, short = 'g', value_delimiter = ',')]
         group_by: Vec<String>,
-        /// Filter, e.g. "name.type = movie and video.resolution >= 2160"
+        /// Filter, e.g. "media.type = movie and video.resolution >= 2160"
         #[arg(long, short)]
         filter: Option<String>,
         /// Only show duplicate groups

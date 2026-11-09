@@ -53,9 +53,15 @@ them. Where the implementation refined a decision, the note says so.
 
 - **Two layers:**
   - Each provider produces its own raw output.
-  - Code in the provider maps that output into domain structs (`fs`, `name`,
-    `video`, `audio`, `image`, `exif`, `content`), which are flattened into
-    typed fields such as `video.height`.
+  - Code in the provider maps that output into domain structs (`fs`,
+    `media`, `release`, `video`, `audio`, `image`, `exif`, `content`), which
+    are flattened into typed fields such as `video.height`.
+  - Domains say what a value means, providers say where it came from. The
+    name provider fills `media.*` (what the file is: title, season,
+    episode), `release.*` (which copy: group, source, tags) and, at low
+    priority, `video.*`. Other sources such as MP4 tags or `.nfo` files can
+    fill `media.*` too and win on priority. Files in a duplicate group share
+    `media.*` and differ in `release.*`.
   - Every value records which provider set it. A configurable priority
     decides conflicts.
   - Keys where providers disagree are listed in `meta.conflicts`. (Q7, Q18, Q29)

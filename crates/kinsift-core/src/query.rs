@@ -285,15 +285,15 @@ mod tests {
             rel,
             100,
             &[
-                ("name.title", Value::Str(title.into())),
-                ("name.season", Value::Int(s)),
-                ("name.episode", Value::Int(e)),
+                ("media.title", Value::Str(title.into())),
+                ("media.season", Value::Int(s)),
+                ("media.episode", Value::Int(e)),
             ],
         )
     }
 
     fn by() -> Vec<String> {
-        vec!["name.title".into(), "name.season".into(), "name.episode".into()]
+        vec!["media.title".into(), "media.season".into(), "media.episode".into()]
     }
 
     #[test]

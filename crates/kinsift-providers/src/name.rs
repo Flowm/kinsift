@@ -13,7 +13,7 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use hunch::{Confidence, HunchResult, MediaType, Property};
-use kinsift_core::domain::{Domain, NameMeta, VideoMeta};
+use kinsift_core::domain::{Domain, MediaMeta, ReleaseMeta, VideoMeta};
 use kinsift_core::provider::{Extraction, FileCtx, Provider, Stage, VIDEO_EXTENSIONS};
 use regex::Regex;
 
@@ -96,21 +96,23 @@ pub fn parse(abs: &Path) -> Extraction {
         _ => "high",
     };
 
-    let name = NameMeta {
+    let media = MediaMeta {
         r#type: kind.map(str::to_owned),
         title,
         year,
         season: result.season().map(i64::from),
         episode: (!episodes.is_empty()).then_some(episodes),
         episode_title: result.episode_title().map(str::to_owned),
-        screen_size: result.screen_size().map(str::to_owned),
-        video_codec: result.video_codec().map(str::to_owned),
-        audio_codec: result.audio_codec().map(str::to_owned),
-        source: result.source().map(str::to_owned),
-        release_group: result.release_group().map(str::to_owned),
         edition: result.edition().map(str::to_owned),
         date: result.date().map(str::to_owned),
         confidence: Some(confidence.to_owned()),
+    };
+    let release = ReleaseMeta {
+        group: result.release_group().map(str::to_owned),
+        source: result.source().map(str::to_owned),
+        screen_size: result.screen_size().map(str::to_owned),
+        video_codec: result.video_codec().map(str::to_owned),
+        audio_codec: result.audio_codec().map(str::to_owned),
     };
     let video = VideoMeta {
         resolution: result.screen_size().and_then(resolution_from_tag),
@@ -124,7 +126,7 @@ pub fn parse(abs: &Path) -> Extraction {
         obj.insert("_context".into(), used_context.into());
         obj.insert("_title_from_folder".into(), title_from_folder.into());
     }
-    Extraction { sets: vec![name.into_fields(), video.into_fields()], raw: Some(raw) }
+    Extraction { sets: vec![media.into_fields(), release.into_fields(), video.into_fields()], raw: Some(raw) }
 }
 
 fn needs_context(r: &HunchResult) -> bool {
@@ -232,10 +234,10 @@ mod tests {
     #[test]
     fn plain_episode() {
         let e = parse(&PathBuf::from("/lib/tv/Northwind Tales/Season 2/Northwind.Tales.S02E05.1080p.WEB.x265-GRP.mkv"));
-        assert_eq!(s(&e, "name.title").as_deref(), Some("Northwind Tales"));
-        assert_eq!(field(&e, "name.season"), Some(Value::Int(2)));
-        assert_eq!(field(&e, "name.episode"), Some(Value::Int(5)));
-        assert_eq!(s(&e, "name.type").as_deref(), Some("episode"));
+        assert_eq!(s(&e, "media.title").as_deref(), Some("Northwind Tales"));
+        assert_eq!(field(&e, "media.season"), Some(Value::Int(2)));
+        assert_eq!(field(&e, "media.episode"), Some(Value::Int(5)));
+        assert_eq!(s(&e, "media.type").as_deref(), Some("episode"));
         assert_eq!(field(&e, "video.resolution"), Some(Value::Int(1080)));
         assert_eq!(s(&e, "video.codec").as_deref(), Some("hevc"));
     }
@@ -243,21 +245,21 @@ mod tests {
     #[test]
     fn multi_episode() {
         let e = parse(&PathBuf::from("/lib/tv/Quill Harbor/Season 1/Quill.Harbor.S01E01E02.720p.HDTV.x264.mkv"));
-        assert_eq!(field(&e, "name.episode"), Some(Value::List(vec![Value::Int(1), Value::Int(2)])));
+        assert_eq!(field(&e, "media.episode"), Some(Value::List(vec![Value::Int(1), Value::Int(2)])));
     }
 
     #[test]
     fn localized_season_folder_with_bare_file_name() {
         let e = parse(&PathBuf::from("/lib/tv/Copper Valley/Staffel 3/S03E10.avi"));
-        assert_eq!(s(&e, "name.title").as_deref(), Some("Copper Valley"));
-        assert_eq!(field(&e, "name.season"), Some(Value::Int(3)));
-        assert_eq!(field(&e, "name.episode"), Some(Value::Int(10)));
+        assert_eq!(s(&e, "media.title").as_deref(), Some("Copper Valley"));
+        assert_eq!(field(&e, "media.season"), Some(Value::Int(3)));
+        assert_eq!(field(&e, "media.episode"), Some(Value::Int(10)));
     }
 
     #[test]
     fn specials_folder_uses_show_name() {
         let e = parse(&PathBuf::from("/lib/tv/Harbor Lights/Specials/S00E04 - Behind the Fog.mp4"));
-        assert_eq!(s(&e, "name.title").as_deref(), Some("Harbor Lights"));
+        assert_eq!(s(&e, "media.title").as_deref(), Some("Harbor Lights"));
     }
 
     #[test]
@@ -265,16 +267,16 @@ mod tests {
         let e = parse(&PathBuf::from(
             "/lib/tv/Lantern Bay- The Long Night/Season 1/Lantern.Bay-.The.Long.Night.S01E03.WEBDL-1080p.h264.mkv",
         ));
-        let title = s(&e, "name.title").unwrap();
+        let title = s(&e, "media.title").unwrap();
         assert!(title.contains("Lantern Bay") && title.contains("Long Night"), "got {title}");
     }
 
     #[test]
     fn movie_with_folder_year() {
         let e = parse(&PathBuf::from("/lib/movies/Paper Comets (2019)/Paper.Comets.2019.Bluray-2160p.x265.mkv"));
-        assert_eq!(s(&e, "name.title").as_deref(), Some("Paper Comets"));
-        assert_eq!(field(&e, "name.year"), Some(Value::Int(2019)));
-        assert_eq!(s(&e, "name.type").as_deref(), Some("movie"));
+        assert_eq!(s(&e, "media.title").as_deref(), Some("Paper Comets"));
+        assert_eq!(field(&e, "media.year"), Some(Value::Int(2019)));
+        assert_eq!(s(&e, "media.type").as_deref(), Some("movie"));
         assert_eq!(field(&e, "video.resolution"), Some(Value::Int(2160)));
     }
 

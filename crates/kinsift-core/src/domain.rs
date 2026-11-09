@@ -63,8 +63,9 @@ domain_struct!(
 );
 
 domain_struct!(
-    /// What the file name says about the content.
-    NameMeta, "name" {
+    /// What the file is: the work, independent of which copy you have.
+    /// Files in a duplicate group share these.
+    MediaMeta, "media" {
         /// `episode`, `movie` or `extra`.
         r#type: String => Value::Str,
         title: String => Value::Str,
@@ -73,15 +74,27 @@ domain_struct!(
         /// One or more episode numbers.
         episode: Vec<i64> => |v: Vec<i64>| if v.len() == 1 { Value::Int(v[0]) } else { Value::List(v.into_iter().map(Value::Int).collect()) },
         episode_title: String => Value::Str,
+        /// Cut or version of the work: `Director's Cut`, `Extended`.
+        edition: String => Value::Str,
+        /// Air date, for daily shows.
+        date: String => Value::Str,
+        /// How sure the source is: `low`, `medium` or `high`.
+        confidence: String => Value::Str,
+    }
+);
+
+domain_struct!(
+    /// Which copy you have: the tags of one release. Files in a duplicate
+    /// group differ in these.
+    ReleaseMeta, "release" {
+        group: String => Value::Str,
+        /// `Blu-ray`, `Web`, `HDTV`, ...
+        source: String => Value::Str,
+        /// Resolution tag as written: `1080p`, `2160p`.
         screen_size: String => Value::Str,
+        /// Codec tags as written: `x265`, `H.264`, `DTS`.
         video_codec: String => Value::Str,
         audio_codec: String => Value::Str,
-        source: String => Value::Str,
-        release_group: String => Value::Str,
-        edition: String => Value::Str,
-        date: String => Value::Str,
-        /// `low`, `medium` or `high`.
-        confidence: String => Value::Str,
     }
 );
 
@@ -164,15 +177,18 @@ pub const KNOWN_FIELDS: &[FieldInfo] = &[
     FieldInfo { key: "fs.ext", label: "", description: "lower-case extension" },
     FieldInfo { key: "fs.size", label: "", description: "size in bytes" },
     FieldInfo { key: "fs.mtime", label: "", description: "modification time" },
-    FieldInfo { key: "name.type", label: "", description: "episode, movie or extra" },
-    FieldInfo { key: "name.title", label: "", description: "title parsed from the path" },
-    FieldInfo { key: "name.year", label: "", description: "year parsed from the path" },
-    FieldInfo { key: "name.season", label: "Season ", description: "season number" },
-    FieldInfo { key: "name.episode", label: "Episode ", description: "episode number(s)" },
-    FieldInfo { key: "name.episode_title", label: "", description: "episode title" },
-    FieldInfo { key: "name.screen_size", label: "", description: "resolution tag in the name (1080p, 2160p)" },
-    FieldInfo { key: "name.video_codec", label: "", description: "codec tag in the name" },
-    FieldInfo { key: "name.release_group", label: "", description: "release group" },
+    FieldInfo { key: "media.type", label: "", description: "episode, movie or extra" },
+    FieldInfo { key: "media.title", label: "", description: "title of the movie or show" },
+    FieldInfo { key: "media.year", label: "", description: "release year" },
+    FieldInfo { key: "media.season", label: "Season ", description: "season number" },
+    FieldInfo { key: "media.episode", label: "Episode ", description: "episode number(s)" },
+    FieldInfo { key: "media.episode_title", label: "", description: "episode title" },
+    FieldInfo { key: "media.edition", label: "", description: "cut or version (Director's Cut, Extended)" },
+    FieldInfo { key: "release.group", label: "", description: "release group" },
+    FieldInfo { key: "release.source", label: "", description: "source (Blu-ray, Web, HDTV)" },
+    FieldInfo { key: "release.screen_size", label: "", description: "resolution tag in the name (1080p, 2160p)" },
+    FieldInfo { key: "release.video_codec", label: "", description: "video codec tag in the name" },
+    FieldInfo { key: "release.audio_codec", label: "", description: "audio codec tag in the name" },
     FieldInfo { key: "video.width", label: "", description: "frame width in pixels" },
     FieldInfo { key: "video.height", label: "", description: "frame height in pixels" },
     FieldInfo { key: "video.resolution", label: "", description: "resolution class (2160, 1080, 720, ...)" },
@@ -214,9 +230,9 @@ mod tests {
     #[test]
     fn flattens_only_present_fields() {
         let set =
-            NameMeta { title: Some("Show".into()), episode: Some(vec![1, 2]), ..Default::default() }.into_fields();
+            MediaMeta { title: Some("Show".into()), episode: Some(vec![1, 2]), ..Default::default() }.into_fields();
         let keys: Vec<String> = set.keys().map(|(k, _)| k).collect();
-        assert_eq!(keys, ["name.title", "name.episode"]);
+        assert_eq!(keys, ["media.title", "media.episode"]);
         assert_eq!(set.fields[1].1, Value::List(vec![Value::Int(1), Value::Int(2)]));
     }
 
@@ -234,7 +250,7 @@ mod tests {
 
     #[test]
     fn raw_identifier_field_name() {
-        let set = NameMeta { r#type: Some("episode".into()), ..Default::default() }.into_fields();
-        assert_eq!(set.keys().next().unwrap().0, "name.type");
+        let set = MediaMeta { r#type: Some("episode".into()), ..Default::default() }.into_fields();
+        assert_eq!(set.keys().next().unwrap().0, "media.type");
     }
 }

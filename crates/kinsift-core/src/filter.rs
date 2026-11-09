@@ -1,8 +1,8 @@
 //! View filters: field comparisons joined by `and`, compiled to SQL.
 //!
 //! ```text
-//! name.type = episode and video.height >= 2160 and fs.size > 1GiB
-//! name.title ~ "comet"              (case-insensitive contains)
+//! media.type = episode and video.height >= 2160 and fs.size > 1GiB
+//! media.title ~ "comet"              (case-insensitive contains)
 //! exif.taken_at is not null
 //! exif.taken_at >= 2024-01-01        (dates and "2024-01-01 12:30" in UTC)
 //! ```
@@ -30,7 +30,7 @@ pub enum Op {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
-    /// A number, plus the word as typed: `name.title = 1917` must also
+    /// A number, plus the word as typed: `media.title = 1917` must also
     /// match the text "1917".
     Num(f64, String),
     Text(String),
@@ -380,22 +380,22 @@ mod tests {
 
     #[test]
     fn parses_and_matches() {
-        let f = Filter::parse("name.type = episode and video.height >= 2160 and fs.size > 1GiB").unwrap();
+        let f = Filter::parse("media.type = episode and video.height >= 2160 and fs.size > 1GiB").unwrap();
         assert_eq!(f.clauses.len(), 3);
         let yes = fields(&[
-            ("name.type", Value::Str("Episode".into())),
+            ("media.type", Value::Str("Episode".into())),
             ("video.height", Value::Int(2160)),
             ("fs.size", Value::Int(2 << 30)),
         ]);
         assert!(f.matches(&yes));
-        let no = fields(&[("name.type", Value::Str("episode".into())), ("video.height", Value::Int(1080))]);
+        let no = fields(&[("media.type", Value::Str("episode".into())), ("video.height", Value::Int(1080))]);
         assert!(!f.matches(&no));
     }
 
     #[test]
     fn null_checks_and_contains() {
-        let f = Filter::parse("exif.taken_at is not null and name.title ~ \"comet riders\" and x.y is null").unwrap();
-        let v = fields(&[("exif.taken_at", Value::Time(1)), ("name.title", Value::Str("Comet Riders Rising".into()))]);
+        let f = Filter::parse("exif.taken_at is not null and media.title ~ \"comet riders\" and x.y is null").unwrap();
+        let v = fields(&[("exif.taken_at", Value::Time(1)), ("media.title", Value::Str("Comet Riders Rising".into()))]);
         assert!(f.matches(&v));
     }
 
@@ -409,9 +409,9 @@ mod tests {
 
     #[test]
     fn not_equal_includes_missing() {
-        let f = Filter::parse("name.type != movie").unwrap();
+        let f = Filter::parse("media.type != movie").unwrap();
         assert!(f.matches(&fields(&[])));
-        assert!(!f.matches(&fields(&[("name.type", Value::Str("movie".into()))])));
+        assert!(!f.matches(&fields(&[("media.type", Value::Str("movie".into()))])));
     }
 
     #[test]
@@ -449,15 +449,15 @@ mod tests {
 
     #[test]
     fn numbers_also_match_text_values() {
-        let f = Filter::parse("name.title = 1917").unwrap();
-        assert!(f.matches(&fields(&[("name.title", Value::Str("1917".into()))])));
+        let f = Filter::parse("media.title = 1917").unwrap();
+        assert!(f.matches(&fields(&[("media.title", Value::Str("1917".into()))])));
         assert!(
             Filter::parse("video.resolution = 1080")
                 .unwrap()
                 .matches(&fields(&[("video.resolution", Value::Int(1080))]))
         );
-        let ne = Filter::parse("name.title != 1917").unwrap();
-        assert!(!ne.matches(&fields(&[("name.title", Value::Str("1917".into()))])));
+        let ne = Filter::parse("media.title != 1917").unwrap();
+        assert!(!ne.matches(&fields(&[("media.title", Value::Str("1917".into()))])));
 
         let mut index = crate::index::Index::open_in_memory().unwrap();
         let root = index.ensure_root(std::path::Path::new("/r")).unwrap();
@@ -468,7 +468,7 @@ mod tests {
             version: 1,
             outcome: Ok(Some(crate::provider::Extraction {
                 sets: vec![crate::domain::FieldSet {
-                    domain: "name",
+                    domain: "media",
                     fields: vec![("title", Value::Str(title.into()))],
                 }],
                 raw: None,

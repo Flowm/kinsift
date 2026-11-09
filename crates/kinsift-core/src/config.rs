@@ -192,7 +192,7 @@ mod tests {
             r#"
             [[views]]
             name = "series"
-            group_by = ["name.title"]
+            group_by = ["media.title"]
             [[views]]
             name = "mine"
             group_by = ["fs.ext"]
@@ -202,7 +202,7 @@ mod tests {
         )
         .unwrap();
         c.merge(user);
-        assert_eq!(c.view("series").unwrap().group_by, ["name.title"]);
+        assert_eq!(c.view("series").unwrap().group_by, ["media.title"]);
         assert!(c.view("mine").is_some());
         assert_eq!(c.providers.priority["video"], ["ffprobe"]);
     }

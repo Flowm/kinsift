@@ -27,7 +27,8 @@ from "duplicate videos" to "any grouping by metadata".
 | Domain | Source | Examples |
 |---|---|---|
 | `fs` | the file system | `fs.path`, `fs.dir`, `fs.ext`, `fs.size`, `fs.mtime` |
-| `name` | the path, parsed with [hunch](https://crates.io/crates/hunch) | `name.title`, `name.season`, `name.episode`, `name.year` |
+| `media` (what the file is) | the path, parsed with [hunch](https://crates.io/crates/hunch) | `media.type`, `media.title`, `media.season`, `media.episode`, `media.year` |
+| `release` (which copy it is) | the same parse of the path | `release.group`, `release.source`, `release.screen_size` |
 | `video`, `audio` | MKV/WebM and MP4/MOV headers (built in, pure Rust); `ffprobe` for other containers if installed | `video.resolution`, `video.codec`, `video.hdr`, `video.fps`, `audio.languages` |
 | `image`, `exif` | image headers and EXIF (built in); `exiftool` for CR3/RAF/RW2/ORF if installed | `exif.taken_at`, `exif.camera`, `image.pixels` |
 | `content` | on demand: `kinsift hash` or `H` in the TUI | `content.hash` |
@@ -166,7 +167,7 @@ kinsift query --view movies --sort size
 Ad-hoc grouping and filtering:
 
 ```sh
-kinsift query -g name.title,name.year -f "name.type = movie and video.resolution >= 2160"
+kinsift query -g media.title,media.year -f "media.type = movie and video.resolution >= 2160"
 kinsift query -g fs.ext --sort count
 ```
 
@@ -184,8 +185,8 @@ kinsift inspect "/mnt/series/Show/Season 1/Show.S01E01.mkv" --raw
 Filters are field comparisons joined by `and`:
 
 ```
-name.type = episode and video.resolution >= 1080 and fs.size > 2GiB
-name.title ~ "star"          # case-insensitive contains
+media.type = episode and video.resolution >= 1080 and fs.size > 2GiB
+media.title ~ "star"          # case-insensitive contains
 exif.taken_at is not null
 exif.taken_at >= 2024-01-01   # dates, or "2024-01-01 12:30" (UTC)
 ```
